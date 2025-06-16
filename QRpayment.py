@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -8,6 +7,20 @@ import re
 import json
 import time
 import qrcode
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import av
+
+st.title("Streamlit WebRTC Camera Test")
+
+class VideoTransformer(VideoTransformerBase):
+    def transform(self, frame):
+        return frame  # no processing, just return raw frame
+
+webrtc_streamer(
+    key="camera",
+    video_transformer_factory=VideoTransformer,
+    media_stream_constraints={"video": True, "audio": False},
+)
 
 # Set page configuration
 st.set_page_config(
