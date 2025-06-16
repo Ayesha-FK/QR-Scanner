@@ -10,18 +10,6 @@ import qrcode
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import av
 
-st.title("Streamlit WebRTC Camera Test")
-
-class VideoTransformer(VideoTransformerBase):
-    def transform(self, frame):
-        return frame  # no processing, just return raw frame
-
-webrtc_streamer(
-    key="camera",
-    video_transformer_factory=VideoTransformer,
-    media_stream_constraints={"video": True, "audio": False},
-)
-
 # Set page configuration
 st.set_page_config(
     page_title="QR Payment System",
@@ -598,116 +586,119 @@ else:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Tab 3: Scan & Pay
-    with tab3:
-        st.markdown('<div class="tab-content">', unsafe_allow_html=True)
-        st.markdown('<p class="sub-header">Scan & Pay</p>', unsafe_allow_html=True)
-        
-        # Initialize camera_active state if not exists
-        if 'camera_active' not in st.session_state:
-            st.session_state.camera_active = False
-        
-        scan_tab1, scan_tab2 = st.tabs(["Live Camera", "Upload Image"])
-        
-        # Live Camera Tab
-        with scan_tab1:
-            col1, col2 = st.columns([3, 2])
-            
-            with col1:
-                # Camera control button
-                if not st.session_state.camera_active:
-                    if st.button("🎥 Start Camera", key="start_camera"):
-                        st.session_state.camera_active = True
-                        st.rerun()
-                else:
-                    if st.button("⏹️ Stop Camera", key="stop_camera"):
-                        st.session_state.camera_active = False
-                        st.rerun()
-                
-                # Real-time QR scanning
-                if st.session_state.camera_active:
-                    st.markdown("### 📷 Real-time QR Scanner")
-                    st.markdown("Point your camera at a QR code")
-                    
-                    # Only call real_time_qr_scan when camera is active
+   from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from pyzbar import pyzbar
+import av
+import cv2
+import json
+
+# Global result holder (Streamlit-webrtc limitation)
+if 'qr_result' not in st.session_state:
+    st.session_state.qr_result = None
+
+# Define the QR Scanner transformer
+class QRScanner(VideoTransformerBase):
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        barcodes = pyzbar.decode(img)
+        for barcode in barcodes:
+            qr_data = barcode.data.decode("utf-8")
+            st.session_state.qr_result = qr_data  # Set in session state
+            (x, y, w, h) = barcode.rect
+            cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        return img
+
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from pyzbar import pyzbar
+import av
+import cv2
+import json
+
+# Global result holder (Streamlit-webrtc limitation)
+if 'qr_result' not in st.session_state:
+    st.session_state.qr_result = None
+
+# Define the QR Scanner transformer
+class QRScanner(VideoTransformerBase):
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        barcodes = pyzbar.decode(img)
+        for barcode in barcodes:
+            qr_data = barcode.data.decode("utf-8")
+            st.session_state.qr_result = qr_data  # Set in session state
+            (x, y, w, h) = barcode.rect
+            cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        return img
+
+# Tab 3: Scan & Pay
+with tab3:
+    st.markdown('<div class="tab-content">', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Scan & Pay</p>', unsafe_allow_html=True)
+
+    if 'camera_active' not in st.session_state:
+        st.session_state.camera_active = False
+
+    scan_tab1, scan_tab2 = st.tabs(["Live Camera", "Upload Image"])
+
+    with scan_tab1:
+        col1, col2 = st.columns([3, 2])
+
+        with col1:
+            if not st.session_state.camera_active:
+                if st.button("🎥 Start Camera", key="start_camera"):
+                    st.session_state.camera_active = True
+                    st.session_state.qr_result = None
+                    st.rerun()
+            else:
+                if st.button("⏹️ Stop Camera", key="stop_camera"):
+                    st.session_state.camera_active = False
+                    st.rerun()
+
+            if st.session_state.camera_active:
+                st.markdown("### 📷 Real-time QR Scanner")
+                st.markdown("Point your camera at a QR code")
+
+                ctx = webrtc_streamer(
+                    key="qr",
+                    video_transformer_factory=QRScanner,
+                    media_stream_constraints={"video": True, "audio": False},
+                    async_processing=True,
+                )
+
+                if st.session_state.qr_result:
+                    st.success("✅ QR Code detected!")
+                    st.session_state.camera_active = False
+
                     try:
-                        qr_data = real_time_qr_scan()
-                        
-                        if qr_data:
-                            st.success("✅ QR Code detected!")
-                            # Automatically deactivate camera after detection
-                            st.session_state.camera_active = False
-                            
-                            # Parse the QR data
-                            try:
-                                payment_data = json.loads(qr_data)
-                                if 'type' in payment_data and payment_data['type'] == 'payment':
-                                    st.session_state.qr_result = qr_data
-                                    st.session_state.parsed_payment_data = payment_data
-                                    st.session_state.scan_state = "detected"
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Invalid QR code: Not a payment request.")
-                            except Exception as e:
-                                st.error(f"❌ Error: Could not parse QR code data. {str(e)}")
+                        payment_data = json.loads(st.session_state.qr_result)
+                        if payment_data.get("type") == "payment":
+                            st.session_state.parsed_payment_data = payment_data
+                            st.session_state.scan_state = "detected"
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid QR code: Not a payment request.")
                     except Exception as e:
-                        st.error(f"❌ Error with camera: {str(e)}")
-                        st.session_state.camera_active = False
-                else:
-                    st.markdown('''
-                    <div class="info-box">
-                        <h4>📱 Camera Inactive</h4>
-                        <p>Click the "Start Camera" button to begin real-time scanning.</p>
-                    </div>
-                    ''', unsafe_allow_html=True)
-            
-            with col2:
-                # Payment details for live scanning
-                if st.session_state.scan_state == "detected" and st.session_state.parsed_payment_data:
-                    payment_data = st.session_state.parsed_payment_data
-                    
-                    st.markdown(f'''
-                    <div class="result-text">
-                        <h4>🎯 Payment Detected</h4>
-                        <p><strong>Recipient:</strong> {payment_data['sender']}</p>
-                        <p><strong>Amount:</strong> PKR {payment_data['amount']:.2f}</p>
-                        <p><strong>Your Balance:</strong> PKR {st.session_state.balance:.2f}</p>
-                    </div>
-                    ''', unsafe_allow_html=True)
-                    
-                    # Quick payment buttons
-                    if st.session_state.balance >= payment_data['amount']:
-                        if st.button("💰 Pay Now", type="primary", key="quick_pay"):
-                            success, message = process_payment(
-                                payment_data['amount'],
-                                payment_data['sender'],
-                                payment_data['sender_cnic']
-                            )
-                            if success:
-                                st.session_state.scan_state = "confirmed"
-                                st.balloons()  # Celebration effect
-                                st.rerun()
-                    else:
-                        st.error("💸 Insufficient funds")
-                    
-                    if st.button("🚫 Cancel", key="quick_cancel"):
-                        st.session_state.scan_state = "idle"
-                        st.session_state.parsed_payment_data = None
-                        st.rerun()
-                elif st.session_state.camera_active:
-                    st.markdown('''
-                    <div class="info-box">
-                        <h4>📱 Live Scanner Active</h4>
-                        <p>Point your camera at a QR code to scan it automatically.</p>
-                        <p><strong>Tips:</strong></p>
-                        <ul>
-                            <li>🔆 Ensure good lighting</li>
-                            <li>📐 Keep QR code straight</li>
-                            <li>📏 Maintain proper distance</li>
-                            <li>✋ Hold steady for best results</li>
-                        </ul>
-                    </div>
-                    ''', unsafe_allow_html=True)
+                        st.error(f"❌ Error: Could not parse QR code data. {str(e)}")
+            else:
+                st.markdown('''
+                <div class="info-box">
+                    <h4>📱 Camera Inactive</h4>
+                    <p>Click the "Start Camera" button to begin real-time scanning.</p>
+                </div>
+                ''', unsafe_allow_html=True)
+
+        with col2:
+            if st.session_state.get("scan_state") == "detected" and st.session_state.get("parsed_payment_data"):
+                payment_data = st.session_state.parsed_payment_data
+
+                st.markdown(f'''
+                <div class="result-text">
+                    <h4>🎯 Payment Detected</h4>
+                    <p><strong>Recipient:</strong> {payment_data['sender']}</p>
+                    <p><strong>Amount:</strong> PKR {payment_data['amount']:.2f}</p>
+                    <p><strong>Your Balance:</strong> PKR {st.session_state.balance:.2f}</p>
+                </div>
+                ''', unsafe_allow_html=True)
         
         # Upload Image Tab
         with scan_tab2:
