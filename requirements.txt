@@ -4,3 +4,6 @@ numpy
 Pillow
 qrcode
 streamlit-webrtc
+pyzbar
+zbar-py
+av
