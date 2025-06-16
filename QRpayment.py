@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
